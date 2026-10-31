@@ -1,13 +1,265 @@
- !DOCTYPE html>
+ doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Security Management System</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--navy:#12345a;--blue:#1769aa;--bg:#f1f5f9;--ink:#172554;--muted:#64748b;--line:#cbd5e1;--red:#b42318}
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:var(--bg);color:var(--ink)}
+header{background:var(--navy);color:#fff;padding:20px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+header h1{font-size:20px;margin:0}header p{margin:6px 0 0;color:#dbeafe}
+main{max-width:1200px;margin:18px auto;padding:0 14px}
+.card,.panel{background:#fff;padding:18px;margin-bottom:15px;border-radius:10px;box-shadow:0 2px 7px #0001}
+nav{display:flex;flex-wrap:wrap;gap:6px;background:#1e293b;padding:8px;border-radius:9px;margin-bottom:15px}
+button{border:0;border-radius:6px;padding:11px 15px;background:var(--blue);color:#fff;cursor:pointer;margin:3px}
+button:hover{filter:brightness(.94)}button.secondary{background:#e2e8f0;color:#172554}button.danger{background:var(--red)}
+nav button{flex:1;min-width:105px;background:transparent;color:#fff}nav button.active,nav button:hover{background:#334155}
+input,select,textarea{width:100%;padding:11px;margin:7px 0 13px;border:1px solid var(--line);border-radius:6px;font:inherit}
+textarea{min-height:85px}label{font-size:13px;font-weight:bold}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+.page{display:none}.page.active{display:block}.hidden{display:none!important}
+.notice{padding:11px;border-radius:7px;background:#eff6ff;margin:10px 0;overflow-wrap:anywhere}
+.notice.error{background:#fff1f0;color:#991b1b}.notice.success{background:#ecfdf5;color:#166534}
+.table-wrap{overflow:auto}table{border-collapse:collapse;width:100%;min-width:650px}
+th,td{text-align:left;padding:10px;border-bottom:1px solid #e2e8f0;font-size:13px}th{background:#f8fafc}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.stat{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:15px}
+.stat strong{display:block;font-size:26px;margin-top:7px}
+.muted{color:var(--muted);font-size:13px}
+.login{max-width:450px;margin:7vh auto}
+footer{text-align:center;color:var(--muted);padding:20px;font-size:12px}
+@media(max-width:600px){header{align-items:flex-start}main{padding:0 10px}.card,.panel{padding:13px}}
+</style>
 </head>
-<body style="font-family:Arial;text-align:center;padding:50px;background:#eef2f7;">
-<h1>SECURITY MANAGEMENT SYSTEM</h1>
-<h2>WEBSITE WORKING!</h2>
-<p>GitHub Pages test successful.</p>
+<body>
+<header>
+ <div><h1>SECURITY MANAGEMENT SYSTEM</h1><p>Operational Information Dashboard</p></div>
+ <div id="userbar" class="hidden"><span id="who"></span><button id="logout" class="secondary">Sign out</button></div>
+</header>
+<main>
+ <section id="login" class="panel login">
+  <h2>Sign in</h2>
+  <p class="muted">Use your Supabase account to access the system.</p>
+  <label for="email">Email</label><input id="email" type="email" autocomplete="username" placeholder="name@example.com">
+  <label for="password">Password</label><input id="password" type="password" autocomplete="current-password" placeholder="Password">
+  <button id="signin">Sign in</button><button id="signup" class="secondary">Create account</button>
+  <div id="authmsg" class="notice hidden"></div>
+ </section>
+
+ <section id="app" class="hidden">
+  <div id="msg" class="notice hidden"></div>
+  <nav id="nav">
+   <button class="active" data-page="dashboard">Dashboard</button>
+   <button data-page="incidents">Incidents</button>
+   <button data-page="patrols">Patrols</button>
+   <button data-page="personnel">Personnel</button>
+   <button data-page="operations">Operations</button>
+   <button data-page="vehicles">Vehicles</button>
+   <button data-page="action_register">Action Register</button>
+   <button data-page="user_roles" id="rolesNav" class="hidden">User Roles</button>
+  </nav>
+
+  <section id="dashboard" class="page active">
+   <div class="panel"><h2>Dashboard</h2><p class="muted">Live record totals from Supabase.</p><div id="stats" class="stats"></div></div>
+   <div class="panel"><h3>System modules</h3><p>Register and review incidents, patrols, personnel, operations, vehicles and follow-up actions. Sign out when finished.</p></div>
+  </section>
+
+  <section id="records" class="page">
+   <div class="panel">
+    <div class="grid">
+     <div><h2 id="recordTitle">Records</h2><p id="recordHelp" class="muted"></p></div>
+     <div><label for="search">Search saved records</label><input id="search" placeholder="Type to search..."></div>
+    </div>
+    <form id="recordForm">
+     <input type="hidden" id="editId">
+     <div id="fields" class="grid"></div>
+     <button type="submit" id="saveBtn">Save record</button>
+     <button type="button" id="clearBtn" class="secondary">Clear</button>
+    </form>
+   </div>
+   <div class="panel"><h3>Saved records</h3><div class="table-wrap"><table><thead id="thead"></thead><tbody id="tbody"></tbody></table></div></div>
+  </section>
+ </section>
+</main>
+<footer>Security Management System • Keep account credentials confidential.</footer>
+
+<script>
+/* Public publishable key only. Never place a service-role/secret key in a browser file. */
+const SUPABASE_URL = "https://mszwhfspypiycwoohqpa.supabase.co";
+const SUPABASE_KEY = "sb_publishable_0-GN_Mpa01lwaZo8LlR6t_QW8IVhdn1";
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let currentUser = null;
+let currentRole = "user";
+let currentTable = "incidents";
+let currentRows = [];
+
+const schemas = {
+ incidents:{title:"Incident Management",help:"Register incidents and their locations.",key:"id",fields:[
+  ["incident_type","Incident type","text",true],["incident_date","Incident date","date",true],
+  ["incident_time","Incident time","time",false],["location","Location","text",true],
+  ["description","Description","textarea",true]]},
+ patrols:{title:"Patrol Management",help:"Record patrol commanders, areas and timings.",key:"id",fields:[
+  ["commander","Patrol commander","text",true],["area_of_responsibility","Area of responsibility","text",true],
+  ["patrol_date","Patrol date","date",true],["start_time","Start time","time",false],
+  ["end_time","End time","time",false],["remarks","Remarks","textarea",false]]},
+ personnel:{title:"Personnel Management",help:"Maintain personnel and duty assignments.",key:"id",fields:[
+  ["full_name","Full name","text",true],["rank","Rank","text",false],
+  ["duty_assignment","Duty assignment","text",false]]},
+ operations:{title:"Operations Management",help:"Record operational activities.",key:"id",fields:[
+  ["operation_name","Operation name","text",true],["location","Location","text",true],
+  ["operation_date","Operation date","date",true],["description","Description","textarea",false]]},
+ vehicles:{title:"Vehicle Management",help:"Record vehicle movements.",key:"id",fields:[
+  ["registration_number","Registration number","text",true],["driver","Driver","text",false],
+  ["destination","Destination","text",false],["movement_date","Movement date","date",true]]},
+ action_register:{title:"Action Register",help:"Track assigned actions, priorities and due dates.",key:"id",fields:[
+  ["action_title","Action title","text",true],["description","Description","textarea",false],
+  ["related_incident_id","Related incident ID","text",false],["assigned_to","Assigned user UUID","text",false],
+  ["priority","Priority","select",false,["Low","Medium","High"]],
+  ["status","Status","select",false,["Pending","In progress","Completed"]],
+  ["due_date","Due date","date",false],["remarks","Remarks","textarea",false]]},
+ user_roles:{title:"User Roles",help:"Administrator-only role assignments. Use the authenticated user's UUID.",key:"user_id",fields:[
+  ["user_id","User UUID","text",true],["role","Role","select",true,["user","admin"]]]}
+};
+
+function byId(id){return document.getElementById(id)}
+function showNotice(id,message,type="success"){
+ const box=byId(id);box.textContent=message;box.className="notice "+type;box.classList.remove("hidden");
+}
+function hideNotice(id){byId(id).classList.add("hidden")}
+function esc(value){return String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+
+async function signIn(){
+ hideNotice("authmsg");
+ const email=byId("email").value.trim(),password=byId("password").value;
+ if(!email||!password){showNotice("authmsg","Enter your email and password.","error");return}
+ const {error}=await db.auth.signInWithPassword({email,password});
+ if(error)showNotice("authmsg",error.message,"error");
+}
+async function signUp(){
+ hideNotice("authmsg");
+ const email=byId("email").value.trim(),password=byId("password").value;
+ if(!email||password.length<6){showNotice("authmsg","Enter a valid email and a password of at least 6 characters.","error");return}
+ const {error}=await db.auth.signUp({email,password});
+ if(error)showNotice("authmsg",error.message,"error");
+ else showNotice("authmsg","Account created. Check your email if confirmation is required.");
+}
+async function loadRole(){
+ currentRole="user";
+ const {data,error}=await db.from("user_roles").select("role").eq("user_id",currentUser.id).maybeSingle();
+ if(!error&&data?.role)currentRole=data.role;
+ byId("rolesNav").classList.toggle("hidden",currentRole!=="admin");
+}
+async function enterApp(user){
+ currentUser=user;
+ byId("login").classList.add("hidden");byId("app").classList.remove("hidden");
+ byId("userbar").classList.remove("hidden");byId("who").textContent=user.email||"Signed in";
+ await loadRole();await showPage("dashboard");
+}
+function leaveApp(){
+ currentUser=null;currentRole="user";
+ byId("app").classList.add("hidden");byId("userbar").classList.add("hidden");byId("login").classList.remove("hidden");
+}
+async function showPage(page){
+ if(page==="user_roles"&&currentRole!=="admin"){showNotice("msg","Administrator access is required.","error");return}
+ document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("active",b.dataset.page===page));
+ document.querySelectorAll(".page").forEach(p=>p.classList.remove("active"));
+ if(page==="dashboard"){byId("dashboard").classList.add("active");await loadDashboard()}
+ else{byId("records").classList.add("active");await setupTable(page)}
+}
+async function loadDashboard(){
+ const tables=["incidents","patrols","personnel","operations","vehicles","action_register"];
+ let html="";
+ for(const table of tables){
+  const {count,error}=await db.from(table).select("*",{count:"exact",head:true});
+  html+=`<div class="stat">${table.replaceAll("_"," ").replace(/\b\w/g,c=>c.toUpperCase())}<strong>${error?"—":count??0}</strong></div>`;
+ }
+ byId("stats").innerHTML=html;
+}
+function makeField([name,label,type,required,options]){
+ let control="";
+ if(type==="textarea")control=`<textarea name="${name}" ${required?"required":""}></textarea>`;
+ else if(type==="select")control=`<select name="${name}" ${required?"required":""}><option value="">Select</option>${options.map(o=>`<option>${esc(o)}</option>`).join("")}</select>`;
+ else control=`<input name="${name}" type="${type}" ${required?"required":""}>`;
+ return `<div><label>${esc(label)}${required?" *":""}</label>${control}</div>`;
+}
+async function setupTable(table){
+ if(!schemas[table])return;
+ currentTable=table;const s=schemas[table];
+ byId("recordTitle").textContent=s.title;byId("recordHelp").textContent=s.help;
+ byId("search").value="";byId("editId").value="";
+ byId("fields").innerHTML=s.fields.map(makeField).join("");
+ byId("thead").innerHTML="<tr>"+s.fields.map(f=>`<th>${esc(f[1])}</th>`).join("")+"<th>Actions</th></tr>";
+ byId("recordForm").onsubmit=saveRecord;
+ byId("clearBtn").onclick=()=>{byId("recordForm").reset();byId("editId").value=""};
+ byId("search").oninput=()=>renderRows();
+ await loadRows();
+}
+async function loadRows(){
+ const s=schemas[currentTable];
+ const {data,error}=await db.from(currentTable).select("*").order(s.key,{ascending:false}).limit(300);
+ if(error){showNotice("msg",`Could not load ${currentTable}: ${error.message}`,"error");currentRows=[]}
+ else{currentRows=data||[];hideNotice("msg")}
+ renderRows();
+}
+async function saveRecord(event){
+ event.preventDefault();
+ const s=schemas[currentTable],form=byId("recordForm"),payload={};
+ for(const [name] of s.fields){
+  const v=form.elements[name].value.trim();
+  payload[name]=v===""?null:v;
+ }
+ if(currentTable==="user_roles"&&currentRole!=="admin"){showNotice("msg","Only administrators can change user roles.","error");return}
+ if(currentTable!=="user_roles"&&!byId("editId").value)payload.created_by=currentUser.id;
+ const editId=byId("editId").value;
+ let query;
+ if(editId)query=db.from(currentTable).update(payload).eq(s.key,editId);
+ else query=db.from(currentTable).insert(payload);
+ const {error}=await query;
+ if(error){showNotice("msg",`Save failed: ${error.message}`,"error");return}
+ showNotice("msg",editId?"Record updated successfully.":"Record saved successfully.");
+ form.reset();byId("editId").value="";await loadRows();
+}
+function renderRows(){
+ const s=schemas[currentTable],q=byId("search").value.toLowerCase();
+ const data=currentRows.filter(r=>JSON.stringify(r).toLowerCase().includes(q));
+ byId("tbody").innerHTML=data.map(r=>"<tr>"+
+  s.fields.map(([k])=>`<td>${esc(r[k]??"")}</td>`).join("")+
+  `<td><button class="secondary" data-edit="${esc(r[s.key])}">Edit</button><button class="danger" data-delete="${esc(r[s.key])}">Delete</button></td></tr>`
+ ).join("")||`<tr><td colspan="${s.fields.length+1}">No records found.</td></tr>`;
+ byId("tbody").onclick=async e=>{
+  const edit=e.target.dataset.edit,del=e.target.dataset.delete;
+  if(edit){
+   const r=currentRows.find(x=>String(x[s.key])===edit);
+   if(!r)return;
+   byId("editId").value=r[s.key];
+   s.fields.forEach(([k])=>{byId("recordForm").elements[k].value=r[k]??""});
+   window.scrollTo({top:0,behavior:"smooth"});
+  }
+  if(del&&confirm("Delete this record? This cannot be undone.")){
+   const {error}=await db.from(currentTable).delete().eq(s.key,del);
+   if(error)showNotice("msg",error.message,"error");
+   else{showNotice("msg","Record deleted.");await loadRows()}
+  }
+ };
+}
+
+byId("signin").addEventListener("click",signIn);
+byId("signup").addEventListener("click",signUp);
+byId("logout").addEventListener("click",async()=>{await db.auth.signOut()});
+byId("nav").addEventListener("click",e=>{
+ const b=e.target.closest("button[data-page]");if(b)showPage(b.dataset.page);
+});
+db.auth.onAuthStateChange((_event,session)=>{
+ if(session?.user)enterApp(session.user);else leaveApp();
+});
+db.auth.getSession().then(({data,error})=>{
+ if(error)showNotice("authmsg",error.message,"error");
+ else if(data.session?.user)enterApp(data.session.user);
+});
+</script>
 </body>
 </html>
